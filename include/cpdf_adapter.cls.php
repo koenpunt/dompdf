@@ -498,18 +498,12 @@ class CPDF_Adapter implements Canvas {
    * @return string The url of the newly converted image
    */
   protected function _convert_gif_bmp_to_png($image_url, $type) {
-    $image_type = Image_Cache::type_to_ext($type);
-    $func_name = "imagecreatefrom$image_type";
-    
-    if ( !function_exists($func_name) ) {
-      throw new DOMPDF_Exception("Function $func_name() not found.  Cannot convert $image_type image: $image_url.  Please install the image PHP extension.");
-    }
-
     set_error_handler("record_warnings");
-    $im = $func_name($image_url);
+    $im = new Imagick($image_url);
 
     if ( $im ) {
-      imageinterlace($im, false);
+      
+      $im->setInterlaceScheme(Imagick::INTERLACE_NO);
 
       $tmp_dir = $this->_dompdf->get_option("temp_dir");
       $tmp_name = tempnam($tmp_dir, "{$image_type}dompdf_img_");
@@ -517,9 +511,10 @@ class CPDF_Adapter implements Canvas {
       $filename = "$tmp_name.png";
       $this->_image_cache[] = $filename;
 
-      imagepng($im, $filename);
-      imagedestroy($im);
-    } 
+      $im->setImageFormat("png");
+      $im->writeImage($filename);
+      $im->clear();
+    }
     else {
       $filename = Image_Cache::$broken_image;
     }

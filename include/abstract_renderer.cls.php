@@ -64,10 +64,6 @@ abstract class Abstract_Renderer {
    * @throws Exception
    */
   protected function _background_image($url, $x, $y, $width, $height, $style) {
-    if ( !function_exists("imagecreatetruecolor") ) {
-      throw new Exception("The PHP GD extension is required, but is not installed.");
-    }
-
     $sheet = $style->get_stylesheet();
 
     // Skip degenerate cases
@@ -251,26 +247,20 @@ abstract class Abstract_Renderer {
     else {
   
       // Create a new image to fit over the background rectangle
-      $bg = imagecreatetruecolor($bg_width, $bg_height);
+      $bg = new Imagick();
+      $transparent_pixel = new ImagickPixel('rgba(255,255,255,0)');
+      $bg->newImage($bg_width, $bg_height, $transparent_pixel);
       
       switch (strtolower($type)) {
         case IMAGETYPE_PNG:
           $is_png = true;
-          imagesavealpha($bg, true);
-          imagealphablending($bg, false);
-          $src = imagecreatefrompng($img);
+          $src = new Imagick($img);
           break;
     
         case IMAGETYPE_JPEG:
-          $src = imagecreatefromjpeg($img);
-          break;
-    
         case IMAGETYPE_GIF:
-          $src = imagecreatefromgif($img);
-          break;
-          
         case IMAGETYPE_BMP:
-          $src = imagecreatefrombmp($img);
+          $src = new Imagick($img);
           break;
     
         default:
@@ -280,21 +270,7 @@ abstract class Abstract_Renderer {
       if ( $src == null ) {
         return;
       }
-  
-      //Background color if box is not relevant here
-      //Non transparent image: box clipped to real size. Background non relevant.
-      //Transparent image: The image controls the transparency and lets shine through whatever background.
-      //However on transparent image preset the composed image with the transparency color,
-      //to keep the transparency when copying over the non transparent parts of the tiles.
-      $ti = imagecolortransparent($src);
-      
-      if ( $ti >= 0 ) {
-        $tc = imagecolorsforindex($src, $ti);
-        $ti = imagecolorallocate($bg, $tc['red'], $tc['green'], $tc['blue']);
-        imagefill($bg, 0, 0, $ti);
-        imagecolortransparent($bg, $ti);
-      }
-  
+
       //This has only an effect for the non repeatable dimension.
       //compute start of src and dest coordinates of the single copy
       if ( $bg_x < 0 ) {
@@ -322,10 +298,11 @@ abstract class Abstract_Renderer {
   
       // Copy regions from the source image to the background
       if ( $repeat === "no-repeat" ) {
-  
-        // Simply place the image on the background
-        imagecopy($bg, $src, $dst_x, $dst_y, $src_x, $src_y, $img_w, $img_h);
-  
+        // crop the image
+        $src->cropImage($img_w, $img_h, $src_x, $src_y);
+        // place the image on the background
+        $bg->compositeImage($src, Imagick::COMPOSITE_OVER, $dst_x, $dst_y);
+
       }
       else if ( $repeat === "repeat-x" ) {
   
@@ -340,7 +317,11 @@ abstract class Abstract_Renderer {
             $src_x = 0;
             $w = $img_w;
           }
-          imagecopy($bg, $src, $dst_x, $dst_y, $src_x, $src_y, $w, $img_h);
+
+          // crop the image
+          $src->cropImage($w, $img_h, $src_x, $src_y);
+          // place the image on the background
+          $bg->compositeImage($src, Imagick::COMPOSITE_OVER, $dst_x, $dst_y);
         }
   
       }
@@ -357,8 +338,10 @@ abstract class Abstract_Renderer {
             $src_y = 0;
             $h = $img_h;
           }
-          imagecopy($bg, $src, $dst_x, $dst_y, $src_x, $src_y, $img_w, $h);
-  
+          // crop the image
+          $src->cropImage($img_w, $h, $src_x, $src_y);
+          // place the image on the background
+          $bg->compositeImage($src, Imagick::COMPOSITE_OVER, $dst_x, $dst_y);
         }
   
       }
@@ -388,7 +371,10 @@ abstract class Abstract_Renderer {
               $src_y = 0;
               $h = $img_h;
             }
-            imagecopy($bg, $src, $dst_x, $dst_y, $src_x, $src_y, $w, $h);
+            // crop the image
+            $src->cropImage($w, $h, $src_x, $src_y);
+            // place the image on the background
+            $bg->compositeImage($src, Imagick::COMPOSITE_OVER, $dst_x, $dst_y);
           }
         }
       }
@@ -396,8 +382,7 @@ abstract class Abstract_Renderer {
       else {
         print 'Unknown repeat!';
       }
-      
-      imagedestroy($src);
+      $src->clear();
 
     } /* End optimize away creation of duplicates */
 
@@ -428,9 +413,9 @@ abstract class Abstract_Renderer {
       //debugpng
       if (DEBUGPNG) print '[_background_image '.$tmp_file.']';
 
-      imagepng($bg, $tmp_file);
+      $bg->writeImage($tmp_file);
       $this->_canvas->image($tmp_file, $x, $y, $width, $height);
-      imagedestroy($bg);
+      $bg->clear();
 
       //debugpng
       if (DEBUGPNG) print '[_background_image unlink '.$tmp_file.']';
